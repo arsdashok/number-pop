@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Number Pop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-1: #0b0f1a;
@@ -131,6 +134,8 @@
   }
   .cell:hover { background: rgba(232, 238, 252, 0.12); }
   .cell.on { background: hsl(188 90% 60%); color: #04141a; border-color: transparent; font-weight: 700; }
+  /* letters use a school-standard infant font (single-storey a/g), like Tobi's materials */
+  #letter-grid .cell { font-family: 'Andika', 'Comic Sans MS', sans-serif; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -347,6 +352,7 @@
     const el = document.createElement("div");
     el.className = "pop";
     el.textContent = shown;
+    if (isLetters()) el.style.fontFamily = "'Andika', 'Comic Sans MS', sans-serif";
     el.style.left = x + "px";
     el.style.top = y + "px";
     el.style.color = color;

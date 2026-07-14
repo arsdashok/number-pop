@@ -110,8 +110,20 @@
   }
   .sbtn:hover { background: rgba(232, 238, 252, 0.16); }
   .sbtn.go { background: hsl(152 60% 46%); border-color: transparent; color: #06120a; font-weight: 700; }
+
+  /* mode toggle (Numbers / Letters) */
+  #mode-row { gap: 8px; margin-bottom: 16px; }
+  .mode-btn {
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    border: 1px solid rgba(232, 238, 252, 0.28); border-radius: 8px;
+    background: rgba(232, 238, 252, 0.05); color: var(--accent); padding: 9px 16px;
+  }
+  .mode-btn.active { background: hsl(188 90% 60%); color: #04141a; border-color: transparent; }
+
   #count { margin-left: auto; opacity: 0.85; font-size: 13px; white-space: nowrap; }
-  #grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 4px; }
+  .picker { display: grid; gap: 4px; margin-top: 4px; }
+  #grid        { grid-template-columns: repeat(10, 1fr); }
+  #letter-grid { grid-template-columns: repeat(13, 1fr); }
   .cell {
     font: inherit; font-size: 12px; padding: 7px 0; text-align: center;
     border: 1px solid rgba(232, 238, 252, 0.15); background: rgba(232, 238, 252, 0.04);
@@ -125,21 +137,43 @@
 <div id="stage"></div>
 <div class="hint" id="hint">Click anywhere</div>
 
-<button id="gear" title="Which numbers pop?" aria-label="Settings">⚙</button>
+<button id="gear" title="What pops?" aria-label="Settings">⚙</button>
 <div id="settings" hidden>
-  <h2>Which numbers pop?</h2>
-  <div class="srow">
-    <label>From <input id="from" type="number" min="1" max="100" value="10"></label>
-    <label>To <input id="to" type="number" min="1" max="100" value="15"></label>
-    <button class="sbtn go" id="setRange">Set range</button>
+  <h2>What pops?</h2>
+
+  <div class="srow" id="mode-row">
+    <button class="mode-btn active" id="mode-numbers" type="button">🔢 Numbers</button>
+    <button class="mode-btn" id="mode-letters" type="button">🔤 Letters</button>
   </div>
-  <div class="srow">
-    <button class="sbtn" id="clear">Clear</button>
-    <button class="sbtn" id="all">All 1–100</button>
-    <span id="count"></span>
+
+  <!-- Numbers -->
+  <div id="numbers-controls">
+    <div class="srow">
+      <label>From <input id="from" type="number" min="1" max="100" value="10"></label>
+      <label>To <input id="to" type="number" min="1" max="100" value="15"></label>
+      <button class="sbtn go" id="setRange" type="button">Set range</button>
+    </div>
+    <div class="srow">
+      <button class="sbtn" id="clear" type="button">Clear</button>
+      <button class="sbtn" id="all" type="button">All 1–100</button>
+      <span id="count"></span>
+    </div>
+    <div id="grid" class="picker"></div>
   </div>
-  <div id="grid"></div>
-  <p style="font-size:12px; opacity:.6; margin-top:12px; line-height:1.5;">
+
+  <!-- Letters -->
+  <div id="letters-controls" hidden>
+    <div class="srow">
+      <button class="sbtn go" id="allLet" type="button">All A–Z</button>
+      <button class="sbtn" id="vowelsLet" type="button">Vowels</button>
+      <button class="sbtn" id="clearLet" type="button">Clear</button>
+      <button class="sbtn" id="caseToggle" type="button" style="width:60px;">ABC</button>
+      <span id="countLet"></span>
+    </div>
+    <div id="letter-grid" class="picker"></div>
+  </div>
+
+  <p id="tip" style="font-size:12px; opacity:.6; margin-top:12px; line-height:1.5;">
     Use From/To for a range, or tap single numbers for any custom set (they can skip, e.g. 10, 12, 15). Your choice is saved.
   </p>
 </div>
@@ -152,94 +186,152 @@
   // Pleasant, varied hues; saturated but legible on dark bg.
   const HUES = [188, 152, 48, 12, 280, 330, 214, 96];
 
-  /* ---------- which numbers are active ---------- */
   const MAX = 100;
-  const KEY = "numberpop.selection";
+  const ALPH = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)); // A..Z
+  const VOWELS = ["A", "E", "I", "O", "U"];
 
-  function loadSelection() {
+  /* ---------- persisted state ---------- */
+  const KEY_NUM  = "numberpop.selection"; // kept for backward compatibility
+  const KEY_LET  = "numberpop.letters";
+  const KEY_MODE = "numberpop.mode";
+  const KEY_CASE = "numberpop.case";
+
+  function loadNumbers() {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length) return new Set(arr);
-      }
+      const arr = JSON.parse(localStorage.getItem(KEY_NUM));
+      if (Array.isArray(arr) && arr.length) return new Set(arr);
     } catch (e) {}
-    const s = new Set();
-    for (let i = 1; i <= MAX; i++) s.add(i); // default: all 1..100 (original behaviour)
-    return s;
+    const s = new Set(); for (let i = 1; i <= MAX; i++) s.add(i); return s; // default all 1..100
   }
-  function saveSelection() {
-    try { localStorage.setItem(KEY, JSON.stringify([...selected].sort((a, b) => a - b))); } catch (e) {}
+  function loadLetters() {
+    try {
+      const arr = JSON.parse(localStorage.getItem(KEY_LET));
+      if (Array.isArray(arr) && arr.length) return new Set(arr.filter(x => ALPH.includes(x)));
+    } catch (e) {}
+    return new Set(ALPH); // default all A..Z
   }
+  const saveNumbers = () => { try { localStorage.setItem(KEY_NUM, JSON.stringify([...selectedNumbers].sort((a, b) => a - b))); } catch (e) {} };
+  const saveLetters = () => { try { localStorage.setItem(KEY_LET, JSON.stringify(ALPH.filter(c => selectedLetters.has(c)))); } catch (e) {} };
+  const saveMode = () => { try { localStorage.setItem(KEY_MODE, mode); } catch (e) {} };
+  const saveCase = () => { try { localStorage.setItem(KEY_CASE, letterCase); } catch (e) {} };
 
-  let selected = loadSelection();
+  let selectedNumbers = loadNumbers();
+  let selectedLetters = loadLetters();
+  let mode = localStorage.getItem(KEY_MODE) === "letters" ? "letters" : "numbers";
+  let letterCase = localStorage.getItem(KEY_CASE) === "lower" ? "lower" : "upper";
+
+  const isLetters = () => mode === "letters";
+  const dispLetter = (ch) => letterCase === "lower" ? ch.toLowerCase() : ch;
 
   /* ---------- settings UI ---------- */
   const gear = document.getElementById("gear");
   const settings = document.getElementById("settings");
   const grid = document.getElementById("grid");
+  const letterGrid = document.getElementById("letter-grid");
   const fromIn = document.getElementById("from");
   const toIn = document.getElementById("to");
   const countEl = document.getElementById("count");
+  const countLetEl = document.getElementById("countLet");
+  const tip = document.getElementById("tip");
+  const numbersControls = document.getElementById("numbers-controls");
+  const lettersControls = document.getElementById("letters-controls");
+  const modeNumBtn = document.getElementById("mode-numbers");
+  const modeLetBtn = document.getElementById("mode-letters");
 
+  // number grid
   for (let n = 1; n <= MAX; n++) {
     const c = document.createElement("button");
-    c.className = "cell";
-    c.type = "button";
-    c.textContent = n;
-    c.dataset.n = n;
+    c.className = "cell"; c.type = "button"; c.textContent = n; c.dataset.n = n;
     c.addEventListener("click", () => {
-      if (selected.has(n)) selected.delete(n); else selected.add(n);
-      c.classList.toggle("on");
-      saveSelection();
-      updateCount();
+      if (selectedNumbers.has(n)) selectedNumbers.delete(n); else selectedNumbers.add(n);
+      c.classList.toggle("on"); saveNumbers(); updateCount();
     });
     grid.appendChild(c);
   }
-  const cellEls = Array.from(grid.children);
+  const numCells = Array.from(grid.children);
 
-  function paintGrid() {
-    cellEls.forEach(c => c.classList.toggle("on", selected.has(+c.dataset.n)));
+  // letter grid
+  ALPH.forEach(ch => {
+    const c = document.createElement("button");
+    c.className = "cell"; c.type = "button"; c.textContent = ch; c.dataset.ch = ch;
+    c.addEventListener("click", () => {
+      if (selectedLetters.has(ch)) selectedLetters.delete(ch); else selectedLetters.add(ch);
+      c.classList.toggle("on"); saveLetters(); updateCount();
+    });
+    letterGrid.appendChild(c);
+  });
+  const letterCells = Array.from(letterGrid.children);
+
+  function paintNumGrid() {
+    numCells.forEach(c => c.classList.toggle("on", selectedNumbers.has(+c.dataset.n)));
+    updateCount();
+  }
+  function paintLetterGrid() {
+    letterCells.forEach(c => {
+      c.textContent = dispLetter(c.dataset.ch);
+      c.classList.toggle("on", selectedLetters.has(c.dataset.ch));
+    });
     updateCount();
   }
   function updateCount() {
-    const n = selected.size;
-    countEl.textContent = n + (n === 1 ? " number" : " numbers");
+    const nn = selectedNumbers.size, nl = selectedLetters.size;
+    countEl.textContent = nn + (nn === 1 ? " number" : " numbers");
+    countLetEl.textContent = nl + (nl === 1 ? " letter" : " letters");
   }
 
+  /* ---------- number controls ---------- */
   function clampRange() {
     let a = parseInt(fromIn.value, 10), b = parseInt(toIn.value, 10);
-    if (isNaN(a)) a = 1;
-    if (isNaN(b)) b = MAX;
-    a = Math.min(Math.max(a, 1), MAX);
-    b = Math.min(Math.max(b, 1), MAX);
+    if (isNaN(a)) a = 1; if (isNaN(b)) b = MAX;
+    a = Math.min(Math.max(a, 1), MAX); b = Math.min(Math.max(b, 1), MAX);
     if (a > b) { const t = a; a = b; b = t; }
-    fromIn.value = a; toIn.value = b;
-    return [a, b];
+    fromIn.value = a; toIn.value = b; return [a, b];
   }
-
   document.getElementById("setRange").addEventListener("click", () => {
     const [a, b] = clampRange();
-    selected = new Set();
-    for (let n = a; n <= b; n++) selected.add(n);
-    paintGrid(); saveSelection();
+    selectedNumbers = new Set(); for (let n = a; n <= b; n++) selectedNumbers.add(n);
+    paintNumGrid(); saveNumbers();
   });
-  document.getElementById("clear").addEventListener("click", () => {
-    selected = new Set(); paintGrid(); saveSelection();
-  });
+  document.getElementById("clear").addEventListener("click", () => { selectedNumbers = new Set(); paintNumGrid(); saveNumbers(); });
   document.getElementById("all").addEventListener("click", () => {
-    selected = new Set();
-    for (let n = 1; n <= MAX; n++) selected.add(n);
-    paintGrid(); saveSelection();
+    selectedNumbers = new Set(); for (let n = 1; n <= MAX; n++) selectedNumbers.add(n);
+    paintNumGrid(); saveNumbers();
   });
+
+  /* ---------- letter controls ---------- */
+  document.getElementById("allLet").addEventListener("click", () => { selectedLetters = new Set(ALPH); paintLetterGrid(); saveLetters(); });
+  document.getElementById("vowelsLet").addEventListener("click", () => { selectedLetters = new Set(VOWELS); paintLetterGrid(); saveLetters(); });
+  document.getElementById("clearLet").addEventListener("click", () => { selectedLetters = new Set(); paintLetterGrid(); saveLetters(); });
+  document.getElementById("caseToggle").addEventListener("click", (e) => {
+    letterCase = letterCase === "upper" ? "lower" : "upper";
+    e.target.textContent = letterCase === "upper" ? "ABC" : "abc";
+    paintLetterGrid(); saveCase();
+  });
+
+  /* ---------- mode switch ---------- */
+  function applyMode() {
+    const letters = isLetters();
+    numbersControls.hidden = letters;
+    lettersControls.hidden = !letters;
+    modeNumBtn.classList.toggle("active", !letters);
+    modeLetBtn.classList.toggle("active", letters);
+    tip.innerHTML = letters
+      ? "Tap the letters you want, or use All A–Z / Vowels. ABC/abc switches case. Then tap anywhere on screen to pop letters. Saved."
+      : "Use From/To for a range, or tap single numbers for any custom set (they can skip, e.g. 10, 12, 15). Your choice is saved.";
+    letters ? paintLetterGrid() : paintNumGrid();
+  }
+  modeNumBtn.addEventListener("click", () => { mode = "numbers"; saveMode(); applyMode(); });
+  modeLetBtn.addEventListener("click", () => { mode = "letters"; saveMode(); applyMode(); });
+
   gear.addEventListener("click", () => { settings.hidden = !settings.hidden; });
 
-  paintGrid();
+  document.getElementById("caseToggle").textContent = letterCase === "upper" ? "ABC" : "abc";
+  paintNumGrid(); paintLetterGrid(); applyMode();
 
   /* ---------- the pop ---------- */
   function spawn(x, y) {
-    const nums = [...selected];
-    if (!nums.length) return; // nothing selected -> nothing to pop
+    const pool = isLetters() ? ALPH.filter(c => selectedLetters.has(c)) : [...selectedNumbers];
+    if (!pool.length) return; // nothing selected -> nothing to pop
 
     if (!dismissed) {
       dismissed = true;
@@ -247,13 +339,14 @@
       setTimeout(() => hint.remove(), 700);
     }
 
-    const n = nums[Math.floor(Math.random() * nums.length)];
+    const item = pool[Math.floor(Math.random() * pool.length)];
+    const shown = isLetters() ? dispLetter(item) : item;
     const hue = HUES[Math.floor(Math.random() * HUES.length)];
     const color = `hsl(${hue} 90% 68%)`;
 
     const el = document.createElement("div");
     el.className = "pop";
-    el.textContent = n;
+    el.textContent = shown;
     el.style.left = x + "px";
     el.style.top = y + "px";
     el.style.color = color;
